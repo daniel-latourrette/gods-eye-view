@@ -18,6 +18,7 @@ import {
   GTFS_INCREMENTALITY_FULL_DATASET,
   decodeVehiclePositions,
 } from './gtfsRealtime.js';
+import { decodeNgsiVehicles } from './ngsiVehicles.js';
 import { getTransitFeed } from './transitFeeds.js';
 
 /** Fresh window: a snapshot younger than this is served without refetching. */
@@ -114,7 +115,10 @@ export function transitUpstreamHeaders(feed, validators = null) {
   return {
     'User-Agent':
       'gods-eye-view-transit-proxy/1.0 (+https://github.com/bilawalsidhu/gods-eye-view)',
-    Accept: 'application/x-protobuf, application/octet-stream;q=0.9, */*;q=0.1',
+    Accept:
+      feed?.format === 'ngsi-v2-vehicles'
+        ? 'application/json'
+        : 'application/x-protobuf, application/octet-stream;q=0.9, */*;q=0.1',
     'Accept-Encoding': 'gzip',
     ...(validators?.etag ? { 'If-None-Match': validators.etag } : {}),
     ...(validators?.lastModified
@@ -234,13 +238,17 @@ export function repairVehicleTimestamps(vehicles, headerTimestamp, fetchedAtS) {
  * a wrong one.
  *
  * @param {object} feed Registry entry.
- * @param {Uint8Array|ArrayBuffer} bytes Raw GTFS-RT FeedMessage.
+ * @param {Uint8Array|ArrayBuffer} bytes Raw GTFS-RT FeedMessage, or an NGSI v2
+ *   Vehicle entity array when `feed.format === 'ngsi-v2-vehicles'`.
  * @param {number} [now=Date.now()] Fetch time (ms epoch).
  * @returns {{ feedId: string, name: string, fetchedAt: number, feedTimestamp: number|null,
  *   version: string|null, entityCount: number, truncated: boolean, count: number, vehicles: object[] }}
  */
 export function buildTransitSnapshot(feed, bytes, now = Date.now()) {
-  const decoded = decodeVehiclePositions(bytes);
+  const decoded =
+    feed?.format === 'ngsi-v2-vehicles'
+      ? decodeNgsiVehicles(bytes, { annotationPrefix: feed.annotationPrefix })
+      : decodeVehiclePositions(bytes);
   if (decoded.incrementality !== GTFS_INCREMENTALITY_FULL_DATASET) {
     throw new TransitFeedShapeError(
       `feed is differential (incrementality ${decoded.incrementality})`,

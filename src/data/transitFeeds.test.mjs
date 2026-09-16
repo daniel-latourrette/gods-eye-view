@@ -107,6 +107,16 @@ test('feeds in range are nearest-first and honor slack as hysteresis', () => {
     ['hsl-helsinki'],
     'Helsinki polls HSL only',
   );
+  assert.deepEqual(
+    transitFeedsInRange(41.1496, -8.611).map((f) => f.id),
+    ['stcp-porto'],
+    'Porto (Aliados) polls STCP only',
+  );
+  assert.deepEqual(
+    transitFeedsInRange(38.7223, -9.1393),
+    [],
+    'Lisbon is outside the STCP circle',
+  );
 });
 
 test('route hints refine a feed default and never escape the known modes', () => {

@@ -124,6 +124,7 @@ function metroTransitRouteMode(routeId) {
  *   url: string, headers?: Record<string, string>,
  *   license: string, licenseUrl: string, attribution: string,
  *   defaultMode: string, routeMode?: (routeId: string|null) => string,
+ *   format?: 'gtfs-rt'|'ngsi-v2-vehicles', annotationPrefix?: string,
  * }>>}
  */
 export const TRANSIT_FEED_REGISTRY = Object.freeze([
@@ -250,6 +251,31 @@ export const TRANSIT_FEED_REGISTRY = Object.freeze([
     }),
     defaultMode: 'bus',
     routeMode: enturRouteMode,
+  }),
+  Object.freeze({
+    id: 'stcp-porto',
+    name: 'STCP',
+    operator: 'STCP — Sociedade de Transportes Colectivos do Porto',
+    region: 'Porto, Portugal',
+    center: Object.freeze({ lat: 41.1579, lon: -8.6291 }),
+    loadRadiusKm: 35,
+    // Not GTFS-RT: Porto Digital's FIWARE context broker publishes STCP bus
+    // positions as NGSI v2 Vehicle entities (refreshed about once a minute).
+    // The id pattern keeps shared bikes/scooters of the same type out.
+    format: 'ngsi-v2-vehicles',
+    annotationPrefix: 'stcp',
+    url: 'https://broker.fiware.urbanplatform.portodigital.pt/v2/entities?type=Vehicle&idPattern=%5Eurn:ngsi-ld:Vehicle:porto:stcp&limit=1000&options=keyValues',
+    license: 'CC0 1.0',
+    licenseUrl:
+      'https://opendata.porto.digital/dataset/urban-platform-bus-location',
+    attribution: 'STCP via Porto Digital Urban Platform (CC0)',
+    defaultEnabled: true,
+    terms: Object.freeze({
+      quote:
+        'Localização em tempo-real dos autocarros STCP — Creative Commons CCZero',
+      note: 'Published keyless on the Porto Digital open data portal under CC0; no stated rate limit. The proxy caches for 15 s, well under the ~60 s upstream refresh.',
+    }),
+    defaultMode: 'bus',
   }),
   Object.freeze({
     id: 'translink-seq',
