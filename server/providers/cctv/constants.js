@@ -201,6 +201,17 @@ export const WARENDORF_IMAGE_ORIGINS = Object.freeze([
   'http://webcam.warendorf.de/',
   'https://www.kreis-warendorf.de/',
 ]);
+/** Lusoponte (Portugal): Tagus bridge traffic cameras from a curated catalog file. */
+export const DEFAULT_LUSOPONTE_SOURCE_FILE =
+  'config/cctv_sources.lusoponte.json';
+export const LUSOPONTE_IMAGE_ORIGIN = 'https://www.lusoponte.pt/assets/';
+/** Lisbon metro area box the Tagus bridges sit in. */
+export const LUSOPONTE_BOUNDS = Object.freeze({
+  minLat: 38.55,
+  maxLat: 38.9,
+  minLon: -9.35,
+  maxLon: -8.85,
+});
 /** Live Traffic NSW (Transport for NSW): keyless public camera catalog. */
 export const NSW_CAMERAS_URL =
   'https://data.livetraffic.com/cameras/traffic-cam.json';

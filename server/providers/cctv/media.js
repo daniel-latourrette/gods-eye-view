@@ -8,6 +8,7 @@ import {
   NSW_IMAGE_ORIGIN,
   NSW_IMAGE_USER_AGENT,
 } from './constants.js';
+import { cctvFetchForUrl } from './tls.js';
 /**
  * Generate a synthetic SVG billboard image for a CCTV camera placeholder.
  *
@@ -469,7 +470,7 @@ export function cctvUpstreamUserAgent(url) {
  *
  * @param {string} url - Server-registered upstream image URL.
  * @param {object} [options]
- * @param {typeof fetch} [options.fetchImpl=fetch] - Fetch implementation.
+ * @param {typeof fetch} [options.fetchImpl] - Fetch implementation (default: global fetch, or a host-specific TLS bundle, see tls.js).
  * @param {number} [options.timeoutMs=CCTV_FRAME_FETCH_TIMEOUT_MS] - Abort timeout.
  * @param {number} [options.maxBytes=CCTV_FRAME_MAX_BODY_BYTES] - Snapshot byte cap.
  * @returns {Promise<{ok:true,body:Buffer,contentType:string}|null>}
@@ -477,7 +478,7 @@ export function cctvUpstreamUserAgent(url) {
 export async function fetchCctvImageFromUpstream(
   url,
   {
-    fetchImpl = fetch,
+    fetchImpl = cctvFetchForUrl(url),
     timeoutMs = CCTV_FRAME_FETCH_TIMEOUT_MS,
     maxBytes = CCTV_FRAME_MAX_BODY_BYTES,
   } = {},

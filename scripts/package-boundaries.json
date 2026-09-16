@@ -158,6 +158,7 @@
       "server/providers/cctv/catalog.js",
       "server/providers/cctv/constants.js",
       "server/providers/cctv/media.js",
+      "server/providers/cctv/tls.js",
       "server/providers/cctv/normalize.js",
       "server/providers/cctv/range.js",
       "server/providers/cctv/sources.js",

@@ -252,6 +252,12 @@ export const DATA_CREDITS = [
       'camera poses derived from OpenStreetMap geometry, © OpenStreetMap contributors (ODbL)',
   },
   {
+    key: 'lusoponte-cctv',
+    html:
+      'Traffic cameras (Lisbon Tagus bridges): <a href="https://www.lusoponte.pt/transito/25-de-abril" target="_blank" rel="noopener">Lusoponte</a> (courtesy); ' +
+      'camera positions approximate',
+  },
+  {
     key: 'nsw-cctv',
     html:
       'CCTV cameras &amp; frames (New South Wales): ' +

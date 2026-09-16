@@ -45,6 +45,9 @@ import {
   TARKTEE_ANCHORS,
   DEFAULT_WARENDORF_SOURCE_FILE,
   WARENDORF_IMAGE_ORIGINS,
+  DEFAULT_LUSOPONTE_SOURCE_FILE,
+  LUSOPONTE_IMAGE_ORIGIN,
+  LUSOPONTE_BOUNDS,
   NSW_CAMERAS_URL,
   NSW_IMAGE_ORIGIN,
   DEFAULT_NSW_MAX_SOURCES,
@@ -1285,6 +1288,79 @@ export function loadWarendorfSourcesFromCatalog({
     });
   }
   console.log('[CCTV] Loaded Warendorf camera sources:', cameras.length);
+  return cameras;
+}
+
+/**
+ * Load the Lusoponte Tagus bridge cameras (Ponte 25 de Abril, Ponte Vasco da
+ * Gama) from the curated catalog file. The operator publishes fixed still
+ * URLs without coordinates, so poses are curated and approximate; only the
+ * official lusoponte.pt assets path is registered.
+ *
+ * @returns {Array<object>} Normalized camera source objects.
+ */
+export function loadLusoponteSourcesFromCatalog({
+  sourceRoot = process.cwd(),
+} = {}) {
+  const sourceFile =
+    process.env.CCTV_LUSOPONTE_SOURCES_FILE || DEFAULT_LUSOPONTE_SOURCE_FILE;
+  const resolved = path.isAbsolute(sourceFile)
+    ? sourceFile
+    : path.resolve(sourceRoot, sourceFile);
+  let rows = [];
+  try {
+    if (!fs.existsSync(resolved)) {
+      console.warn('[CCTV] Lusoponte source file missing:', resolved);
+      return [];
+    }
+    const parsed = JSON.parse(fs.readFileSync(resolved, 'utf8'));
+    rows = Array.isArray(parsed) ? parsed : [];
+  } catch (error) {
+    console.warn(
+      '[CCTV] Lusoponte source file read error:',
+      error?.message || error,
+    );
+    return [];
+  }
+  const cameras = [];
+  const seen = new Set();
+  for (const item of rows) {
+    if (!item || typeof item !== 'object') continue;
+    const id = typeof item.id === 'string' ? item.id.trim() : '';
+    const url =
+      typeof item.url === 'string'
+        ? item.url.trim()
+        : typeof item.snapshotUrl === 'string'
+          ? item.snapshotUrl.trim()
+          : '';
+    if (!id || seen.has(id) || !url.startsWith(LUSOPONTE_IMAGE_ORIGIN))
+      continue;
+    const lat = typeof item.lat === 'number' ? item.lat : NaN;
+    const lon = typeof item.lon === 'number' ? item.lon : NaN;
+    if (
+      !isPlausibleLatLon(lat, lon) ||
+      lat < LUSOPONTE_BOUNDS.minLat ||
+      lat > LUSOPONTE_BOUNDS.maxLat ||
+      lon < LUSOPONTE_BOUNDS.minLon ||
+      lon > LUSOPONTE_BOUNDS.maxLon
+    )
+      continue;
+    seen.add(id);
+    cameras.push({
+      ...item,
+      id,
+      url,
+      snapshotUrl: url,
+      city: String(item.city || 'Lisboa'),
+      cityId: String(item.cityId || 'lisboa'),
+      provider: 'Lusoponte',
+      feedType: 'image',
+      sourceKind: 'lusoponte-bridges',
+      headingConfidence: item.headingConfidence === 'high' ? 'high' : 'low',
+      poseSource: 'curated',
+    });
+  }
+  console.log('[CCTV] Loaded Lusoponte camera sources:', cameras.length);
   return cameras;
 }
 

@@ -15,6 +15,7 @@ import {
   loadTallinnSourcesFromCatalog,
   loadTarkteeSourcesFromDatex,
   loadWarendorfSourcesFromCatalog,
+  loadLusoponteSourcesFromCatalog,
   loadNswSourcesFromOpenData,
   loadCalgarySourcesFromOpenData,
 } from './sources.js';
@@ -75,6 +76,11 @@ const LIVE_PACKS = [
     name: 'warendorf',
     enabled: () => envEnabled('CCTV_WARENDORF_ENABLED'),
     load: loadWarendorfSourcesFromCatalog,
+  },
+  {
+    name: 'lusoponte',
+    enabled: () => envEnabled('CCTV_LUSOPONTE_ENABLED'),
+    load: loadLusoponteSourcesFromCatalog,
   },
   {
     name: 'nsw',
