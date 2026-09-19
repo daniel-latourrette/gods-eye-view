@@ -1,5 +1,9 @@
 import { matchFlowToRoads } from '../../data/flowMatch.js';
-import { TRAFFIC_TIMING_ENABLED, FLOW_RENDER_RACE_MS } from './policy.js';
+import {
+  TRAFFIC_TIMING_ENABLED,
+  FLOW_RENDER_RACE_MS,
+  LIVE_FLOW_TILE_ZOOM,
+} from './policy.js';
 
 export function createFlow({ state: layerState, services, parts, source }) {
   const { registerDynamicCredit, TOMTOM_CREDIT } = services.credits;
@@ -100,6 +104,7 @@ export function createFlow({ state: layerState, services, parts, source }) {
           layerState._activeFetchAbort = new AbortController();
         const segments = await fetchFlowForBounds(clamped, {
           signal: layerState._activeFetchAbort.signal,
+          zoom: LIVE_FLOW_TILE_ZOOM,
         });
         if (generation !== layerState._loadGeneration) return;
         const { matches, matchedCount, candidateCount } = matchFlowToRoads(

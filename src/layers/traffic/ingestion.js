@@ -3,7 +3,9 @@ import {
   OVERPASS_URL,
   TILE_CACHE_MAX_ENTRIES,
   FAST_FETCH_ALTITUDE,
+  LIVE_FLOW_TILE_ZOOM,
 } from './policy.js';
+import { roadsFromFlowSegments } from '../../data/flowRoads.js';
 
 export function createIngestion({
   state: layerState,
@@ -41,6 +43,31 @@ export function createIngestion({
     { majorOnly = false, timeoutSec = 25, signal } = {},
     trace = null,
   ) {
+    // Live mode: draw roads from the TomTom flow tiles themselves (they carry
+    // road polylines + class), so a key-holding user never waits on public
+    // Overpass mirrors. The flow decode cache makes this free when the warm-up
+    // or the later flow match fetch the same tiles. Overpass stays the
+    // keyless path and the fallback when every flow tile fails.
+    await parts.flow.ensureFlowStatus();
+    signal?.throwIfAborted();
+    if (layerState._liveMode) {
+      const bounds = { south, west, north, east };
+      try {
+        const segments = await fetchFlowForBounds(bounds, {
+          signal,
+          zoom: LIVE_FLOW_TILE_ZOOM,
+        });
+        signal?.throwIfAborted();
+        const snapshot = roadsFromFlowSegments(segments, { majorOnly, bounds });
+        if (snapshot.roads.length > 0) return snapshot;
+      } catch (e) {
+        if (e?.name === 'AbortError') throw e;
+        console.warn(
+          '[Data:Traffic] TomTom road geometry unavailable, using Overpass:',
+          e?.message || e,
+        );
+      }
+    }
     const state =
       TRAFFIC_TIMING_ENABLED && trace
         ? parts.timing.trafficTimingPass(
@@ -182,7 +209,10 @@ export function createIngestion({
         layerState._enabled &&
         generation === layerState._loadGeneration
       ) {
-        fetchFlowForBounds(clamped, { signal: requestSignal }).catch(() => {
+        fetchFlowForBounds(clamped, {
+          signal: requestSignal,
+          zoom: LIVE_FLOW_TILE_ZOOM,
+        }).catch(() => {
           /* warm-up only */
         });
       }

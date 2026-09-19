@@ -213,3 +213,12 @@ export const TILE_CACHE_MAX_ENTRIES = 64;
  */
 
 export const FLOW_RENDER_RACE_MS = 250;
+
+/**
+ * TomTom flow-tile zoom for live mode. Live mode also draws its roads from
+ * these tiles, and z12 geometry is quantized to ~2.4 m and heavily generalized,
+ * so dots drift off the carriageway on curves. z14 (~0.6 m, ~4x the vertices)
+ * sits on the road; the 0.05° fetch clamp keeps a load to at most ~12 tiles,
+ * all shared by the road pass, the warm-up and the congestion match.
+ */
+export const LIVE_FLOW_TILE_ZOOM = 14;

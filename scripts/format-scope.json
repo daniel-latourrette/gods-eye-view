@@ -427,6 +427,8 @@
   "src/layers/traffic/policy.js",
   "src/layers/traffic/rendering.js",
   "src/layers/traffic/ingestion.js",
+  "src/data/flowRoads.js",
+  "src/data/flowRoads.test.mjs",
   "src/layers/traffic/flowSource.js",
   "src/layers/traffic/animation.js",
   "src/layers/traffic/index.js",
