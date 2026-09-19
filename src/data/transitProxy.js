@@ -19,6 +19,12 @@ import {
   decodeVehiclePositions,
 } from './gtfsRealtime.js';
 import { decodeNgsiVehicles } from './ngsiVehicles.js';
+import {
+  GTFS_SCHEDULE_FILES,
+  buildTimetable,
+  scheduledVehicles,
+} from './gtfsSchedule.js';
+import { readZipEntries } from './zipEntries.js';
 import { getTransitFeed } from './transitFeeds.js';
 
 /** Fresh window: a snapshot younger than this is served without refetching. */
@@ -314,5 +320,51 @@ export function transitResponseHeaders(
     ...(Number.isFinite(contactedAt)
       ? { 'X-Transit-Contact': String(Math.floor(contactedAt)) }
       : {}),
+  };
+}
+
+/** How long a parsed static GTFS timetable is reused before refetching. */
+export const TRANSIT_SCHEDULE_TTL_MS = 12 * 60 * 60 * 1000;
+
+/**
+ * Parse a static GTFS zip into the timetable `buildScheduleSnapshot` reads.
+ * @param {Uint8Array|ArrayBuffer} zipBytes
+ * @returns {Promise<object>}
+ */
+export async function parseScheduleFeed(zipBytes) {
+  const entries = await readZipEntries(zipBytes, GTFS_SCHEDULE_FILES);
+  for (const required of ['stop_times.txt', 'trips.txt', 'stops.txt']) {
+    if (!entries.has(required))
+      throw new TransitFeedShapeError(`GTFS zip lacks ${required}`, 'shape');
+  }
+  const decoder = new TextDecoder('utf-8');
+  const files = {};
+  for (const [name, bytes] of entries) files[name] = decoder.decode(bytes);
+  return buildTimetable(files);
+}
+
+/**
+ * Snapshot of timetable-estimated positions at `now`. Every vehicle carries the
+ * snapshot time as a FEED time (`timestampSource: 'header'`), never as its own
+ * report — nothing reported these positions.
+ *
+ * @param {object} feed Registry entry (`format: 'gtfs-schedule'`).
+ * @param {object} timetable From `parseScheduleFeed`.
+ * @param {number} [now=Date.now()]
+ */
+export function buildScheduleSnapshot(feed, timetable, now = Date.now()) {
+  const nowS = Math.floor(now / 1000);
+  const vehicles = scheduledVehicles(timetable, now);
+  return {
+    feedId: feed.id,
+    name: feed.name,
+    fetchedAt: now,
+    feedTimestamp: nowS,
+    version: null,
+    entityCount: vehicles.length,
+    truncated: false,
+    count: vehicles.length,
+    estimated: true,
+    vehicles: repairVehicleTimestamps(vehicles, nowS, nowS),
   };
 }

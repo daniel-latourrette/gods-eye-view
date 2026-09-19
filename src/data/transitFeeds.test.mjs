@@ -109,8 +109,8 @@ test('feeds in range are nearest-first and honor slack as hysteresis', () => {
   );
   assert.deepEqual(
     transitFeedsInRange(41.1496, -8.611).map((f) => f.id),
-    ['stcp-porto'],
-    'Porto (Aliados) polls STCP only',
+    ['stcp-porto', 'metro-porto'],
+    'Porto (Aliados) polls STCP and the Metro timetable',
   );
   assert.deepEqual(
     transitFeedsInRange(38.7223, -9.1393),

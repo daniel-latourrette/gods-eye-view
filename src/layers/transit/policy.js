@@ -347,6 +347,9 @@ export function buildTransitSelectionCopy(
   // subway drawn on a street reads as a bug until the card says what it is.
   const kindWord = TRANSIT_MODE_WORD[mode] || TRANSIT_MODE_WORD.unknown;
   const details = [`${kindWord} · ${feed.name} · ${feed.region}`];
+  // A timetable estimate must never read as a sighting.
+  if (feed.positionsEstimated)
+    details.push('Position estimated from timetable · not GPS');
   const motion = [];
   // What the SCREEN is doing leads, because that is what the reader can check.
   const shown = entry ? displayMotion(entry, nowMs) : null;

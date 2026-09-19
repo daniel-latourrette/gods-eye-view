@@ -19,7 +19,10 @@ import {
   TRANSIT_PROXY_TIMEOUT_MS,
   TRANSIT_PROXY_TTL_MS,
   TransitFeedShapeError,
+  TRANSIT_SCHEDULE_TTL_MS,
+  buildScheduleSnapshot,
   buildTransitSnapshot,
+  parseScheduleFeed,
   isAcceptableTransitUpstreamUrl,
   isTransitRedirectStatus,
   nextTransitBackoffMs,
@@ -110,6 +113,8 @@ export async function fetchTransitFeed(
 export function createTransitService({ fetchImpl = fetch } = {}) {
   /** @type {Map<string, {at:number, body:string, host:string}>} feedId → snapshot */
   const cache = new Map();
+  /** @type {Map<string, {at:number, timetable:object, host:string}>} feedId → parsed static GTFS */
+  const timetables = new Map();
   const history = createTransitHistory();
   const admitHistory = makeRateLimiter({
     windowMs: 60000,
@@ -140,6 +145,58 @@ export function createTransitService({ fetchImpl = fetch } = {}) {
     return wait;
   }
 
+  /**
+   * Timetable feeds: refetch the static GTFS zip at most every
+   * TRANSIT_SCHEDULE_TTL_MS (keeping the last good timetable if a refetch
+   * fails), then compute estimated positions for `now`.
+   */
+  async function refreshSchedule(feed, now, signal) {
+    let held = timetables.get(feed.id);
+    if (!held || now - held.at >= TRANSIT_SCHEDULE_TTL_MS) {
+      try {
+        const { response, finalUrl } = await fetchTransitFeed(
+          feed,
+          signal,
+          fetchImpl,
+        );
+        if (!isAcceptableTransitUpstreamUrl(finalUrl)) {
+          throw new Error('upstream is not https');
+        }
+        if (!response.ok) {
+          const error = new Error(`upstream HTTP ${response.status}`);
+          error.upstreamStatus = response.status;
+          throw error;
+        }
+        const bytes = await readResponseBytesCapped(
+          response,
+          TRANSIT_PROXY_MAX_BODY_BYTES,
+        );
+        held = {
+          at: now,
+          timetable: await parseScheduleFeed(bytes),
+          host: new URL(finalUrl).hostname,
+        };
+        timetables.set(feed.id, held);
+      } catch (error) {
+        if (!held) throw error;
+      }
+    }
+    if (closed) throw new Error('Transit provider closed');
+    const snapshot = buildScheduleSnapshot(feed, held.timetable, now);
+    history.ingest(feed, snapshot.vehicles, Date.now());
+    const entry = {
+      at: snapshot.fetchedAt,
+      contactedAt: held.at,
+      body: JSON.stringify(snapshot),
+      host: held.host,
+      etag: null,
+      lastModified: null,
+    };
+    cache.set(feed.id, entry);
+    cooldown.delete(feed.id);
+    return entry;
+  }
+
   async function refresh(feed, now) {
     const controller = new AbortController();
     controllers.add(controller);
@@ -149,6 +206,9 @@ export function createTransitService({ fetchImpl = fetch } = {}) {
     );
     const previous = cache.get(feed.id);
     try {
+      if (feed.format === 'gtfs-schedule') {
+        return await refreshSchedule(feed, now, controller.signal);
+      }
       const { response, finalUrl } = await fetchTransitFeed(
         feed,
         controller.signal,

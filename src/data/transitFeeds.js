@@ -124,7 +124,8 @@ function metroTransitRouteMode(routeId) {
  *   url: string, headers?: Record<string, string>,
  *   license: string, licenseUrl: string, attribution: string,
  *   defaultMode: string, routeMode?: (routeId: string|null) => string,
- *   format?: 'gtfs-rt'|'ngsi-v2-vehicles', annotationPrefix?: string,
+ *   format?: 'gtfs-rt'|'ngsi-v2-vehicles'|'gtfs-schedule', annotationPrefix?: string,
+ *   positionsEstimated?: boolean,
  * }>>}
  */
 export const TRANSIT_FEED_REGISTRY = Object.freeze([
@@ -276,6 +277,35 @@ export const TRANSIT_FEED_REGISTRY = Object.freeze([
       note: 'Published keyless on the Porto Digital open data portal under CC0; no stated rate limit. The proxy caches for 15 s, well under the ~60 s upstream refresh.',
     }),
     defaultMode: 'bus',
+  }),
+  Object.freeze({
+    id: 'metro-porto',
+    name: 'Metro do Porto (horário)',
+    operator: 'Metro do Porto',
+    region: 'Porto, Portugal',
+    // Network centroid: Póvoa de Varzim (line B) and the airport (line E)
+    // both sit inside 35 km.
+    center: Object.freeze({ lat: 41.2, lon: -8.63 }),
+    loadRadiusKm: 35,
+    // No public live positions exist for Metro do Porto. This entry is the
+    // operator's STATIC GTFS: positions are estimated from the timetable
+    // (src/data/gtfsSchedule.js), refetched every 12 h, and every card says so.
+    // The file name carries the timetable date, so a new timetable means a new
+    // URL here (same file is published CC0 on opendata.porto.digital).
+    format: 'gtfs-schedule',
+    positionsEstimated: true,
+    url: 'https://www.metrodoporto.pt/metrodoporto/uploads/document/file/794/google_transit_04_09_2026.zip',
+    license: 'CC0 1.0',
+    licenseUrl:
+      'https://opendata.porto.digital/dataset/horarios-paragens-e-rotas-em-formato-gtfs',
+    attribution: 'Metro do Porto timetable (GTFS, CC0) — estimated positions',
+    defaultEnabled: true,
+    terms: Object.freeze({
+      quote:
+        'Horários, paragens e rotas em formato GTFS — Metro do Porto — Creative Commons CCZero',
+      note: 'Static timetable only. Vehicles are placed where the timetable says they should be; delays and cancellations are not visible.',
+    }),
+    defaultMode: 'subway',
   }),
   Object.freeze({
     id: 'translink-seq',
