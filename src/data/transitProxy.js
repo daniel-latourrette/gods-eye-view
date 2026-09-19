@@ -326,6 +326,9 @@ export function transitResponseHeaders(
 /** How long a parsed static GTFS timetable is reused before refetching. */
 export const TRANSIT_SCHEDULE_TTL_MS = 12 * 60 * 60 * 1000;
 
+/** Wait after a failed timetable check before trying again. */
+export const TRANSIT_SCHEDULE_RETRY_MS = 30 * 60 * 1000;
+
 /**
  * Parse a static GTFS zip into the timetable `buildScheduleSnapshot` reads.
  * @param {Uint8Array|ArrayBuffer} zipBytes
@@ -351,8 +354,14 @@ export async function parseScheduleFeed(zipBytes) {
  * @param {object} feed Registry entry (`format: 'gtfs-schedule'`).
  * @param {object} timetable From `parseScheduleFeed`.
  * @param {number} [now=Date.now()]
+ * @param {{version?: string|null}} [meta] Timetable file name, reported as `version`.
  */
-export function buildScheduleSnapshot(feed, timetable, now = Date.now()) {
+export function buildScheduleSnapshot(
+  feed,
+  timetable,
+  now = Date.now(),
+  { version = null } = {},
+) {
   const nowS = Math.floor(now / 1000);
   const vehicles = scheduledVehicles(timetable, now);
   return {
@@ -360,7 +369,7 @@ export function buildScheduleSnapshot(feed, timetable, now = Date.now()) {
     name: feed.name,
     fetchedAt: now,
     feedTimestamp: nowS,
-    version: null,
+    version,
     entityCount: vehicles.length,
     truncated: false,
     count: vehicles.length,

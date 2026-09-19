@@ -11,6 +11,7 @@ import {
 import { readZipEntries } from './zipEntries.js';
 import { buildScheduleSnapshot, parseScheduleFeed } from './transitProxy.js';
 import { createTransitService } from '../sources/transitService.js';
+import { findGtfsZipLink } from './gtfsDiscovery.js';
 
 // Two stations 1.11 km apart due north; trip T1 leaves S1 at 08:00:00, dwells
 // at S2 08:10–08:11, arrives S3 08:20. Trip N1 runs past midnight (24:30).
@@ -198,25 +199,121 @@ test('a GTFS zip becomes an estimated snapshot with feed-time stamps', async () 
   );
 });
 
-test('the service fetches the timetable once and serves estimates', async (t) => {
-  const zip = await makeZip(GTFS);
-  let calls = 0;
+const PAGE = 'https://www.metrodoporto.pt/pages/337';
+const pageHtml = (href) =>
+  `<ul><li><a href="/metrodoporto/uploads/document/file/807/horarios.pdf">Horários</a></li>` +
+  `<li><a href="${href}"><span>GTFS Horários</span> (para aplicações)</a></li></ul>`;
+
+function scheduleService(t, routes) {
+  const calls = [];
   const service = createTransitService({
     fetchImpl: async (url) => {
-      calls += 1;
-      assert.match(url, /^https:\/\/www\.metrodoporto\.pt\//);
-      return new Response(zip, { status: 200 });
+      calls.push(url);
+      const route = routes[url];
+      if (!route) return new Response('missing', { status: 404 });
+      if (route instanceof Error) throw route;
+      return route();
     },
   });
   t.after(service.close);
-  const response = await service.handle({
-    url: 'https://example.test/api/transit/vehicles/metro-porto',
-    method: 'GET',
+  const get = async () => {
+    const response = await service.handle({
+      url: 'https://example.test/api/transit/vehicles/metro-porto',
+      method: 'GET',
+    });
+    return { status: response.status, body: await response.json() };
+  };
+  return { calls, get };
+}
+
+test('the timetable zip is found on the operator page', async (t) => {
+  t.mock.method(console, 'log', () => {});
+  const zip = await makeZip(GTFS);
+  const newer =
+    'https://www.metrodoporto.pt/metrodoporto/uploads/document/file/900/google_transit_01_11_2026.zip';
+  const { calls, get } = scheduleService(t, {
+    [PAGE]: () =>
+      new Response(
+        pageHtml(
+          '/metrodoporto/uploads/document/file/900/google_transit_01_11_2026.zip',
+        ),
+      ),
+    [newer]: () => new Response(zip),
   });
-  assert.equal(response.status, 200);
-  const body = await response.json();
-  assert.equal(body.feedId, 'metro-porto');
+  const { status, body } = await get();
+  assert.equal(status, 200);
   assert.equal(body.estimated, true);
-  assert.ok(Array.isArray(body.vehicles));
-  assert.equal(calls, 1);
+  assert.equal(body.version, 'google_transit_01_11_2026.zip');
+  assert.deepEqual(calls, [PAGE, newer]);
+});
+
+test('an unreadable page or a page without the link falls back to the registered zip', async (t) => {
+  t.mock.method(console, 'log', () => {});
+  t.mock.method(console, 'warn', () => {});
+  const zip = await makeZip(GTFS);
+  const { getTransitFeed } = await import('./transitFeeds.js');
+  const registered = getTransitFeed('metro-porto').url;
+  for (const page of [
+    () => new Response('down', { status: 503 }),
+    () => new Response('<a href="/x.pdf">Horários</a>'),
+    () => new Response(pageHtml('https://evil.example/google_transit.zip')),
+  ]) {
+    const { calls, get } = scheduleService(t, {
+      [PAGE]: page,
+      [registered]: () => new Response(zip),
+    });
+    const { status, body } = await get();
+    assert.equal(status, 200);
+    assert.equal(body.version, registered.split('/').pop());
+    assert.deepEqual(calls, [PAGE, registered]);
+  }
+});
+
+test('no timetable at all is an upstream error, not an empty map', async (t) => {
+  t.mock.method(console, 'warn', () => {});
+  const { get } = scheduleService(t, {});
+  const { status } = await get();
+  assert.ok(status >= 500, `status ${status}`);
+});
+
+test('GTFS link discovery stays on the page origin and matches the link text', () => {
+  const page = 'https://www.metrodoporto.pt/pages/337';
+  assert.equal(
+    findGtfsZipLink(
+      '<a href="/metrodoporto/uploads/document/file/794/google_transit_04_09_2026.zip">GTFS Horários&nbsp; (para aplicações)</a>',
+      page,
+      /GTFS/i,
+    ),
+    'https://www.metrodoporto.pt/metrodoporto/uploads/document/file/794/google_transit_04_09_2026.zip',
+  );
+  assert.equal(
+    findGtfsZipLink(
+      '<a href="https://evil.example/gtfs.zip">GTFS</a><a href="/a/b.pdf">GTFS</a>',
+      page,
+      /GTFS/i,
+    ),
+    null,
+  );
+  assert.equal(
+    findGtfsZipLink('<a href="/x/relatorio.zip">Relatório</a>', page, /GTFS/i),
+    null,
+  );
+  assert.equal(
+    findGtfsZipLink(
+      "<a class='d' href='/f/gtfs_2027.zip'>Download</a>",
+      page,
+      /GTFS/i,
+    ),
+    'https://www.metrodoporto.pt/f/gtfs_2027.zip',
+    'file name can carry the match',
+  );
+  assert.equal(
+    findGtfsZipLink(
+      '<a href="/f/gtfs.zip">GTFS</a>',
+      'http://www.metrodoporto.pt/p',
+      /GTFS/i,
+    ),
+    null,
+    'plain-http pages are refused',
+  );
 });

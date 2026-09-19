@@ -10,6 +10,7 @@ import { createTransitHistory } from './transitHistoryStore.js';
 import { coalesceProxyRequest, readResponseBytesCapped } from './httpBody.js';
 import { makeRateLimiter } from './rateLimit.js';
 import { publicTransitCatalog } from '../data/transitFeeds.js';
+import { findGtfsZipLink } from '../data/gtfsDiscovery.js';
 import {
   TRANSIT_ADMISSION_MAX_GLOBAL,
   TRANSIT_ADMISSION_MAX_PER_FEED,
@@ -19,6 +20,7 @@ import {
   TRANSIT_PROXY_TIMEOUT_MS,
   TRANSIT_PROXY_TTL_MS,
   TransitFeedShapeError,
+  TRANSIT_SCHEDULE_RETRY_MS,
   TRANSIT_SCHEDULE_TTL_MS,
   buildScheduleSnapshot,
   buildTransitSnapshot,
@@ -145,48 +147,115 @@ export function createTransitService({ fetchImpl = fetch } = {}) {
     return wait;
   }
 
+  /** GET one registered URL of a feed and return its capped body bytes. */
+  async function fetchFeedBytes(feed, url, signal) {
+    const { response, finalUrl } = await fetchTransitFeed(
+      { ...feed, url },
+      signal,
+      fetchImpl,
+    );
+    if (!isAcceptableTransitUpstreamUrl(finalUrl)) {
+      throw new Error('upstream is not https');
+    }
+    if (!response.ok) {
+      try {
+        await response.body?.cancel();
+      } catch {
+        /* no-op */
+      }
+      const error = new Error(`upstream HTTP ${response.status}`);
+      error.upstreamStatus = response.status;
+      throw error;
+    }
+    const bytes = await readResponseBytesCapped(
+      response,
+      TRANSIT_PROXY_MAX_BODY_BYTES,
+    );
+    return { bytes, finalUrl };
+  }
+
   /**
-   * Timetable feeds: refetch the static GTFS zip at most every
-   * TRANSIT_SCHEDULE_TTL_MS (keeping the last good timetable if a refetch
-   * fails), then compute estimated positions for `now`.
+   * The zip URL a timetable feed should use now: the link found on the
+   * operator's page when the entry names one (`discovery`), else the entry's
+   * fixed `url`. Discovery failures fall back to the fixed URL.
+   */
+  async function currentScheduleUrl(feed, signal) {
+    if (!feed.discovery) return { url: feed.url, discovered: false };
+    try {
+      const { bytes, finalUrl } = await fetchFeedBytes(
+        feed,
+        feed.discovery.page,
+        signal,
+      );
+      const link = findGtfsZipLink(
+        new TextDecoder('utf-8').decode(bytes),
+        finalUrl,
+        feed.discovery.linkText,
+      );
+      if (link) return { url: link, discovered: true };
+      console.warn(
+        `[Transit] ${feed.id}: no GTFS link on ${feed.discovery.page}; using the registered URL`,
+      );
+    } catch (error) {
+      if (signal.aborted) throw error;
+      console.warn(
+        `[Transit] ${feed.id}: timetable page unavailable (${error?.message || error}); using the registered URL`,
+      );
+    }
+    return { url: feed.url, discovered: false };
+  }
+
+  /**
+   * Timetable feeds: every TRANSIT_SCHEDULE_TTL_MS, look up the current zip
+   * (operator page when configured) and download it only when its URL changed
+   * or nothing is held yet. A failed check keeps the last good timetable and
+   * waits TRANSIT_SCHEDULE_RETRY_MS before trying again. Positions are then
+   * computed for `now`.
    */
   async function refreshSchedule(feed, now, signal) {
     let held = timetables.get(feed.id);
-    if (!held || now - held.at >= TRANSIT_SCHEDULE_TTL_MS) {
+    const due = !held || now >= held.checkAfter;
+    if (due) {
       try {
-        const { response, finalUrl } = await fetchTransitFeed(
-          feed,
-          signal,
-          fetchImpl,
-        );
-        if (!isAcceptableTransitUpstreamUrl(finalUrl)) {
-          throw new Error('upstream is not https');
+        const { url, discovered } = await currentScheduleUrl(feed, signal);
+        if (!held || held.url !== url) {
+          const { bytes, finalUrl } = await fetchFeedBytes(feed, url, signal);
+          held = {
+            at: now,
+            url,
+            discovered,
+            version: decodeURIComponent(url.split('/').pop() || '') || null,
+            timetable: await parseScheduleFeed(bytes),
+            host: new URL(finalUrl).hostname,
+          };
+          console.log(
+            `[Transit] ${feed.id}: timetable ${held.version} loaded${discovered ? ' (found on the operator page)' : ''}`,
+          );
         }
-        if (!response.ok) {
-          const error = new Error(`upstream HTTP ${response.status}`);
-          error.upstreamStatus = response.status;
-          throw error;
-        }
-        const bytes = await readResponseBytesCapped(
-          response,
-          TRANSIT_PROXY_MAX_BODY_BYTES,
-        );
         held = {
-          at: now,
-          timetable: await parseScheduleFeed(bytes),
-          host: new URL(finalUrl).hostname,
+          ...held,
+          checkedAt: now,
+          checkAfter: now + TRANSIT_SCHEDULE_TTL_MS,
         };
         timetables.set(feed.id, held);
       } catch (error) {
         if (!held) throw error;
+        if (signal.aborted) throw error;
+        console.warn(
+          `[Transit] ${feed.id}: timetable refresh failed (${error?.message || error}); keeping ${held.version}`,
+        );
+        held = { ...held, checkAfter: now + TRANSIT_SCHEDULE_RETRY_MS };
+        timetables.set(feed.id, held);
       }
     }
     if (closed) throw new Error('Transit provider closed');
-    const snapshot = buildScheduleSnapshot(feed, held.timetable, now);
+    const snapshot = buildScheduleSnapshot(feed, held.timetable, now, {
+      version: held.version,
+    });
     history.ingest(feed, snapshot.vehicles, Date.now());
     const entry = {
       at: snapshot.fetchedAt,
-      contactedAt: held.at,
+      contactedAt: held.checkedAt ?? held.at,
       body: JSON.stringify(snapshot),
       host: held.host,
       etag: null,

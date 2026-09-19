@@ -126,6 +126,7 @@ function metroTransitRouteMode(routeId) {
  *   defaultMode: string, routeMode?: (routeId: string|null) => string,
  *   format?: 'gtfs-rt'|'ngsi-v2-vehicles'|'gtfs-schedule', annotationPrefix?: string,
  *   positionsEstimated?: boolean,
+ *   discovery?: {page: string, linkText: RegExp},
  * }>>}
  */
 export const TRANSIT_FEED_REGISTRY = Object.freeze([
@@ -290,10 +291,17 @@ export const TRANSIT_FEED_REGISTRY = Object.freeze([
     // No public live positions exist for Metro do Porto. This entry is the
     // operator's STATIC GTFS: positions are estimated from the timetable
     // (src/data/gtfsSchedule.js), refetched every 12 h, and every card says so.
-    // The file name carries the timetable date, so a new timetable means a new
-    // URL here (same file is published CC0 on opendata.porto.digital).
+    // Each timetable is published under a new dated file name and linked from
+    // the operator's "Mapas e horários" page, so the proxy finds the current
+    // zip there every 12 h (same-origin links only) and falls back to `url`,
+    // the last known file, if the page cannot be read. The same file is
+    // published CC0 on opendata.porto.digital.
     format: 'gtfs-schedule',
     positionsEstimated: true,
+    discovery: Object.freeze({
+      page: 'https://www.metrodoporto.pt/pages/337',
+      linkText: /GTFS/i,
+    }),
     url: 'https://www.metrodoporto.pt/metrodoporto/uploads/document/file/794/google_transit_04_09_2026.zip',
     license: 'CC0 1.0',
     licenseUrl:
